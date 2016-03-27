@@ -6,7 +6,28 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy = TRUE, cache=TRUE, echo = TRUE)
+```
+
+
+```{r}
+## Load Libraries
+suppressMessages(library(caret))
+suppressMessages(library(gbm))
+suppressMessages(library(e1071)) # predict Compressive Strength
+suppressMessages(library(rattle))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(randomForest))
+#suppressMessages(library(ggplot2))
+suppressMessages(library(plyr))
+suppressMessages(library(dplyr))
+## for parallel processing
+suppressMessages(library(parallel)) 
+suppressMessages(library(foreach))
+suppressMessages(library(doParallel))
+
+# Load working directory
+setwd("~/code/DataScience/class/08_Machine_Learning/Coursera_Machine_Learning")
 ```
 
 ## Introduction
@@ -19,10 +40,195 @@ The goal of this project is to predict the manner in which the participants did 
 The raw data is provided by Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.. More information is available from this source: http://groupware.les.inf.puc-rio.br/har.
 
 ## Data Preprocessing
+### Data Loading
+Load the training and test data.
+```{r}
+if (!file.exists("data/pml-training.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+}
+if (!file.exists("data/pml-testing.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+}
+```
 
+Removing empty fields, miscellaneous NA and #DIV/0! as “NA”.
+```{r, results='hide'}
+rawDataTrain  <- read.csv("data/pml-training.csv", sep = ",", na.strings = c("", "NA", "#DIV/0!"))
+str(rawDataTrain)
+dim(rawDataTrain)
+
+rawDataTest  <- read.csv("data/pml-testing.csv", sep = ",", na.strings = c("", "NA", "#DIV/0!"))
+str(rawDataTest)
+dim(rawDataTest)
+```
+
+Check the rows of training and test data which has complete cases.
+```{r}
+sum(complete.cases(rawDataTrain))
+sum(complete.cases(rawDataTest))
+```
+There are no complete cases neither in the training nor the testing data set. Therefore, we have to clean the data.
 
 
 ### Data Cleaning and Preperation
+First, we remove variables with no variability at all. These variables are not useful when we want to construct a prediction model.
+```{r}
+trainVar <- rawDataTrain[, -nearZeroVar(rawDataTrain)]
+testVar <- rawDataTest[, -nearZeroVar(rawDataTest)]
+```
+
+Next, we remove the columns that do not contribute to the results like variables with user information, time and undefined:
+
+```{r}
+varToRm <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "num_window")
+
+trainNew <- subset(trainVar, select=setdiff(names(trainVar), varToRm))
+dataTest <- subset(testVar, select=setdiff(names(testVar), varToRm))
+
+dim(trainNew)
+dim(dataTest)
+```
+
+
+Remove columns that contain majority of NAs.
+```{r}
+index = vector()
+        for (i in 1:ncol(trainNew)) {
+                if (sum(is.na(trainNew[, i])) / nrow(trainNew) > 0.6) { index = c(index, i)
+        }
+}
+dataTrain <- trainNew[, -index]
+```
+
+### Harmonise variables in training amd test sets
+```{r}
+clsTrain <- dataTrain[, "classe"]
+dataTrain <- dataTrain[, colnames(dataTrain) %in% colnames(dataTest)] # classe will be removed because not in test set
+dataTrain <- cbind(clsTrain, dataTrain) # add classe clumn again
+names(dataTrain)[1] <- "classe" # and rename back again
+# Check if classe variable is a factor
+# class(dataTrain$classe) => is true
+```
+With the cleaning process the number of variables for the analysis has been reduced to 53 only.
+
+According to the correlation analysis (see Appendix, <span style="color:red">Figure 1</span> ) we could make an evem more compact analysis by performing a PCA (Principal Components Analysis) as a pre-processing step to the datasets. But as the there are a great numvber of correlations, this step will not be applied for this assignment.
 
 
 ## Model Building
+
+### Partitioning the original training data for Cross Validation
+The cleaned data set has about 20K rows, this is a moderate data set and I am splitting it 70:30.
+```{r, results='hide'}
+set.seed(1234)
+inTrain <- createDataPartition(y=dataTrain$classe, p=0.7, list=FALSE)
+training <- dataTrain[inTrain, ]
+testing <- dataTrain[-inTrain, ]
+```
+
+```{r}
+dim(training)
+dim(testing)
+```
+
+
+### Data Modelling
+We fit different classification model types using 5-fold cross validation. To speed up the process we use parallel processing.
+```{r}
+## Initialize parallel processing
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+
+tcontrol <- trainControl(method="cv", number=10, verboseIter = FALSE)
+rp.fit <- train(classe ~ ., data=training, method="rpart",trControl=tcontrol, tuneLength=10)
+lda.fit <- train(classe ~ ., data=training, method="lda", trControl=tcontrol)
+gbm.fit <- train(classe ~ ., data=training, method="gbm", trControl=tcontrol, verbose=FALSE)
+knn.fit <- train(classe ~ ., data=training, method="knn", trControl=tcontrol)
+rf.fit  <- train(classe ~ ., data=training, method="rf",  trControl=tcontrol, ntree=200)
+
+## Stop parallel processing
+stopCluster(cluster)
+proc.time() - ptm
+```
+
+Use the models to predict the results on the testing set.
+```{r}
+rp.pred.test <- predict(rp.fit,testing)
+lda.pred.test <- predict(lda.fit,testing)
+gbm.pred.test <- predict(gbm.fit,testing)
+knn.pred.test <- predict(knn.fit,testing)
+rf.pred.test <- predict(rf.fit,testing)
+```
+Create a confusion matrix for each model:
+```{r}
+cmRP  <- confusionMatrix(testing$classe, rp.pred.test)
+cmLDA <- confusionMatrix(testing$classe, lda.pred.test)
+cmGBM <- confusionMatrix(testing$classe, gbm.pred.test)
+cmKNN <- confusionMatrix(testing$classe, knn.pred.test)
+cmRF  <- confusionMatrix(testing$classe, rf.pred.test)
+```
+
+The results of the models are shown in the following table: TrainAaccuracy (performance in building the model), ValidationAccuracy (model performance against a separate data set than we used to train the model), ValidationKappa (measuring validation agreement between actual and predicted values) and the OutOfSampleErr (one minus validation accuracy).
+```{r kable}
+require(knitr)
+ModelType <- c("Rpart tree", "Linear discriminant", "Gradient boosting machine", "K nearest neighbor", "Random forest")
+
+max(rf.fit$results$Accuracy)
+
+TrainAccuracy <- c(max(rp.fit$results$Accuracy), max(lda.fit$results$Accuracy), max(gbm.fit$results$Accuracy), max(knn.fit$results$Accuracy), max(rf.fit$results$Accuracy))
+
+ValidationAccuracy <- c(cmRP$overall[1],  cmLDA$overall[1], cmGBM$overall[1], cmKNN$overall[1], cmRF$overall[1])
+
+ValidationKappa <- c(cmRP$overall[2],  cmLDA$overall[2], cmGBM$overall[2], cmKNN$overall[2], cmRP$overall[2])
+
+OutOfSampleErr <- 1 - ValidationAccuracy
+
+metrics <- data.frame(ModelType, TrainAccuracy, ValidationAccuracy, ValidationKappa, OutOfSampleErr)
+kable(metrics, digits=5)
+```
+
+The **decision tree model (Rpart)** is `r round( cmRP$overall[1], 2)`% accurate on the testing data partitioned from the training data. The expected out of sample error is roughly `r  round(OutOfSampleErr[1], 2)`%. The tree is shown in <span style="color:red">Figure 2</span>.
+
+The best model is **Random forest**. It has the lowest out of sample error `r OutOfSampleErr[5]` and an accurency of `r cmRP$overall[5]`. Some models have a better validation accuracy than training accuracy. This behavior often points to some degree of overfitting because normally validation accuracy tends to be lower than training accuracy.
+
+The print of the confusion matrix shows that the sensitivity and specificity of the random forest model both seem to be quite good. The detection rate (the rate of truepositives) closely matches the prevalence (the estimated population prevalence) of the classes.
+
+```{r}
+print(rf.fit)
+print(cmRF)
+```
+
+
+## Applying Selected Model to Test Set
+We will use the Random Forest model to make the predictions on the test data to predict the way 20 participates performed the exercise.
+```{r}
+parTesting <- predict(rf.fit, dataTest)
+parTesting
+```
+
+
+
+## Appendix
+
+Figure 1: Correlation Plot
+```{r, fig.height = 8, fig.width = 8}
+suppressMessages(library(corrplot)) # nice correlation plots
+corrMatrix <- cor(dataTrain[,-1])
+corrplot(corrMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+Highly correlated variables are shown in dark colors.
+
+
+Figure 2: Plot of the decision tree model (Rpart)
+```{r}
+fancyRpartPlot(rp.fit)
+```
+
+
+Figure 3: Plot of the variable importance
+```{r}
+varImpRF <- varImp(rf.fit, scale=FALSE)
+plot(varImpRF, top=30, main="Variable importance - Random Forest model - top 30 predictors")
+```
+
