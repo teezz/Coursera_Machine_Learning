@@ -10,7 +10,7 @@ knitr::opts_chunk$set(tidy = TRUE, cache=TRUE, echo = TRUE)
 ```
 
 
-```{r}
+```{r, echo=FALSE}
 ## Load Libraries
 suppressMessages(library(caret))
 suppressMessages(library(gbm))
@@ -147,7 +147,7 @@ rf.fit  <- train(classe ~ ., data=training, method="rf",  trControl=tcontrol, nt
 
 ## Stop parallel processing
 stopCluster(cluster)
-proc.time() - ptm
+
 ```
 
 Use the models to predict the results on the testing set.
@@ -186,9 +186,9 @@ metrics <- data.frame(ModelType, TrainAccuracy, ValidationAccuracy, ValidationKa
 kable(metrics, digits=5)
 ```
 
-The **decision tree model (Rpart)** is `r round( cmRP$overall[1], 2)`% accurate on the testing data partitioned from the training data. The expected out of sample error is roughly `r  round(OutOfSampleErr[1], 2)`%. The tree is shown in <span style="color:red">Figure 2</span>.
+The **decision tree model (Rpart)** is `r round( cmRP$overall[1]*100, 2)`% accurate on the testing data partitioned from the training data (<span style="color:red">Figure 3</span>). The expected out of sample error is roughly `r  round(OutOfSampleErr[1], 2)`%. The tree is shown in <span style="color:red">Figure 2</span>.
 
-The best model is **Random forest**. It has the lowest out of sample error `r OutOfSampleErr[5]` and an accurency of `r cmRP$overall[5]`. Some models have a better validation accuracy than training accuracy. This behavior often points to some degree of overfitting because normally validation accuracy tends to be lower than training accuracy.
+The best model is **Random forest**. It has the lowest out of sample error `r OutOfSampleErr[5]` and an validation accurency of `r round(cmRF$overall[1]*100, 2)` (<span style="color:red">Figure 4</span>). Some models have a better validation accuracy than training accuracy. This behavior often points to some degree of overfitting because normally validation accuracy tends to be lower than training accuracy.
 
 The print of the confusion matrix shows that the sensitivity and specificity of the random forest model both seem to be quite good. The detection rate (the rate of truepositives) closely matches the prevalence (the estimated population prevalence) of the classes.
 
@@ -197,6 +197,8 @@ print(rf.fit)
 print(cmRF)
 ```
 
+The random forest model shows a rapid decline in predictor importance. This supports the result of the correlation analysis.
+
 
 ## Applying Selected Model to Test Set
 We will use the Random Forest model to make the predictions on the test data to predict the way 20 participates performed the exercise.
@@ -204,7 +206,6 @@ We will use the Random Forest model to make the predictions on the test data to 
 parTesting <- predict(rf.fit, dataTest)
 parTesting
 ```
-
 
 
 ## Appendix
@@ -222,11 +223,27 @@ Highly correlated variables are shown in dark colors.
 
 Figure 2: Plot of the decision tree model (Rpart)
 ```{r}
-fancyRpartPlot(rp.fit)
+fancyRpartPlot(rp.fit$finalModel)
 ```
 
 
-Figure 3: Plot of the variable importance
+Figure 3: Decision tree accuracy
+```{r}
+plot(cmRP$table, col = cmRP$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(cmRP$overall['Accuracy'], 4)))
+```
+
+
+Figure 4: Random forest accuracy
+```{r}
+plot(cmRF$table, col = cmRF$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(cmRF$overall['Accuracy'], 4)))
+```
+
+
+Figure 5: Plot of the variable importance
 ```{r}
 varImpRF <- varImp(rf.fit, scale=FALSE)
 plot(varImpRF, top=30, main="Variable importance - Random Forest model - top 30 predictors")
