@@ -1,0 +1,28 @@
+---
+title: "Machine Learning Course Project"
+author: "TZiegler"
+date: "27 März 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+This was done in an eximination by Velloso et al. They used data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of this project is to predict the manner in which the participants did the exercise. This is the "classe" variable in the training set.
+
+The raw data is provided by Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.. More information is available from this source: http://groupware.les.inf.puc-rio.br/har.
+
+## Data Preprocessing
+
+
+
+### Data Cleaning and Preperation
+
+
+## Model Building
